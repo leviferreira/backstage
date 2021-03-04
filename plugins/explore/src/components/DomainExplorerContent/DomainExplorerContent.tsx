@@ -18,6 +18,7 @@ import {
   Content,
   ContentHeader,
   EmptyState,
+  ItemCardGrid,
   Progress,
   SupportButton,
   useApi,
@@ -27,7 +28,7 @@ import { catalogApiRef } from '@backstage/plugin-catalog-react';
 import { Button } from '@material-ui/core';
 import React from 'react';
 import { useAsync } from 'react-use';
-import { DomainCardGrid } from '../DomainCard';
+import { DomainCard } from '../DomainCard';
 
 export const DomainExplorerContent = () => {
   const catalogApi = useApi(catalogApiRef);
@@ -67,7 +68,13 @@ export const DomainExplorerContent = () => {
           }
         />
       )}
-      {!loading && entities && <DomainCardGrid entities={entities} />}
+      {!loading && entities && (
+        <ItemCardGrid>
+          {entities.map(e => (
+            <DomainCard key={e.metadata.uid} entity={e} />
+          ))}
+        </ItemCardGrid>
+      )}
     </Content>
   );
 };
