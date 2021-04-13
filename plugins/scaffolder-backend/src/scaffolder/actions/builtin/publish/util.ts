@@ -14,7 +14,22 @@
  * limitations under the License.
  */
 
-import { InputError } from '@backstage/backend-common';
+import { InputError } from '@backstage/errors';
+import { join as joinPath, normalize as normalizePath } from 'path';
+
+export const getRepoSourceDirectory = (
+  workspacePath: string,
+  sourcePath: string | undefined,
+) => {
+  if (sourcePath) {
+    const safeSuffix = normalizePath(sourcePath).replace(
+      /^(\.\.(\/|\\|$))+/,
+      '',
+    );
+    return joinPath(workspacePath, safeSuffix);
+  }
+  return workspacePath;
+};
 
 export const parseRepoUrl = (repoUrl: string) => {
   let parsed;

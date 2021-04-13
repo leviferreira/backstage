@@ -21,9 +21,10 @@ import { ExternalRouteRef, RouteRef } from '../routing';
 import { AnyApiFactory } from '../apis';
 import { AppTheme, ProfileInfo } from '../apis/definitions';
 import { AppConfig } from '@backstage/config';
+import { SubRouteRef } from '../routing/types';
 
 export type BootErrorPageProps = {
-  step: 'load-config';
+  step: 'load-config' | 'load-chunk';
   error: Error;
 };
 
@@ -102,7 +103,7 @@ type TargetRouteMap<ExternalRoutes extends AnyExternalRoutes> = {
     infer Params,
     any
   >
-    ? RouteRef<Params>
+    ? RouteRef<Params> | SubRouteRef<Params>
     : never;
 };
 

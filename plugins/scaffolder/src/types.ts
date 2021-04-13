@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import { JSONSchema } from '@backstage/catalog-model';
 import { JsonValue } from '@backstage/config';
 
 export type Status = 'open' | 'processing' | 'failed' | 'completed';
@@ -53,4 +54,28 @@ export type ScaffolderTask = {
   status: 'failed' | 'completed' | 'processing' | 'open' | 'cancelled';
   lastHeartbeatAt: string;
   createdAt: string;
+};
+
+export type ListActionsResponse = Array<{
+  id: string;
+  description?: string;
+  schema?: {
+    input?: JSONSchema;
+    output?: JSONSchema;
+  };
+}>;
+
+type OutputLink = {
+  url: string;
+  title?: string;
+  icon?: string;
+};
+
+export type TaskOutput = {
+  entityRef?: string;
+  /** @deprecated use the `links` property to link out to relevant resources */
+  remoteUrl?: string;
+  links?: OutputLink[];
+} & {
+  [key: string]: unknown;
 };

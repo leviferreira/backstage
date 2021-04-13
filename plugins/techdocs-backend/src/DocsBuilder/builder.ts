@@ -13,8 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { NotModifiedError } from '@backstage/backend-common';
-import { Entity } from '@backstage/catalog-model';
+import {
+  Entity,
+  ENTITY_DEFAULT_NAMESPACE,
+  serializeEntityRef,
+} from '@backstage/catalog-model';
+import { NotModifiedError } from '@backstage/errors';
 import {
   GeneratorBase,
   GeneratorBuilder,
@@ -29,13 +33,7 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import { Logger } from 'winston';
-import { BuildMetadataStorage } from '.';
-
-const getEntityId = (entity: Entity) => {
-  return `${entity.kind}:${entity.metadata.namespace ?? ''}:${
-    entity.metadata.name
-  }`;
-};
+import { BuildMetadataStorage } from './BuildMetadataStorage';
 
 type DocsBuilderArguments = {
   preparers: PreparerBuilder;
@@ -78,45 +76,76 @@ export class DocsBuilder {
     }
 
     /**
-     * Prepare and cache check
+     * Prepare (and cache check)
      */
 
-    // Use the in-memory storage for setting and getting etag for this entity.
-    const buildMetadataStorage = new BuildMetadataStorage(
-      this.entity.metadata.uid,
+    this.logger.info(
+      `Step 1 of 3: Preparing docs for entity ${serializeEntityRef(
+        this.entity,
+      )}`,
     );
 
-    // TODO: As of now, this happens on each and every request to TechDocs.
-    // In a high traffic environment, this will cause a lot of requests to the source code provider.
-    // After Async build is implemented https://github.com/backstage/backstage/issues/3717,
-    // make sure to limit checking for cache invalidation to once per minute or so.
+    // If available, use the etag stored in techdocs_metadata.json to
+    // check if docs are outdated and need to be regenerated.
+    let storedEtag: string | undefined;
+    if (await this.publisher.hasDocsBeenGenerated(this.entity)) {
+      try {
+        storedEtag = (
+          await this.publisher.fetchTechDocsMetadata({
+            namespace:
+              this.entity.metadata.namespace ?? ENTITY_DEFAULT_NAMESPACE,
+            kind: this.entity.kind,
+            name: this.entity.metadata.name,
+          })
+        ).etag;
+      } catch (err) {
+        // Proceed with a fresh build
+        this.logger.warn(
+          `Unable to read techdocs_metadata.json, proceeding with fresh build, error ${err}.`,
+        );
+      }
+    }
+
     let preparedDir: string;
-    let etag: string;
+    let newEtag: string;
     try {
       const preparerResponse = await this.preparer.prepare(this.entity, {
-        etag: buildMetadataStorage.getEtag(),
+        etag: storedEtag,
       });
 
       preparedDir = preparerResponse.preparedDir;
-      etag = preparerResponse.etag;
+      newEtag = preparerResponse.etag;
     } catch (err) {
       if (err instanceof NotModifiedError) {
         // No need to prepare anymore since cache is valid.
+        // Set last check happened to now
+        new BuildMetadataStorage(this.entity.metadata.uid).setLastUpdated();
+        this.logger.debug(
+          `Docs for ${serializeEntityRef(
+            this.entity,
+          )} are unmodified. Using cache, skipping generate and prepare`,
+        );
         return;
       }
       throw new Error(err.message);
     }
 
     this.logger.info(
-      `TechDocs prepare step completed for entity ${getEntityId(this.entity)}.`,
+      `Prepare step completed for entity ${serializeEntityRef(
+        this.entity,
+      )}, stored at ${preparedDir}`,
     );
-    this.logger.debug(`Prepared files temporarily stored at ${preparedDir}`);
 
     /**
      * Generate
      */
 
-    this.logger.info(`Running generator on entity ${getEntityId(this.entity)}`);
+    this.logger.info(
+      `Step 2 of 3: Generating docs for entity ${serializeEntityRef(
+        this.entity,
+      )}`,
+    );
+
     // Create a temporary directory to store the generated files in.
     const tmpdirPath = os.tmpdir();
     // Fixes a problem with macOS returning a path that is a symlink
@@ -130,16 +159,15 @@ export class DocsBuilder {
       outputDir,
       dockerClient: this.dockerClient,
       parsedLocationAnnotation,
-      etag,
+      etag: newEtag,
     });
 
-    this.logger.debug(`Generated files temporarily stored at ${outputDir}`);
     // Remove Prepared directory since it is no longer needed.
     // Caveat: Can not remove prepared directory in case of git preparer since the
     // local git repository is used to get etag on subsequent requests.
     if (this.preparer instanceof UrlPreparer) {
       this.logger.debug(
-        `Removing prepared directory ${preparedDir} since the site has been generated.`,
+        `Removing prepared directory ${preparedDir} since the site has been generated`,
       );
       try {
         // Not a blocker hence no need to await this.
@@ -153,22 +181,28 @@ export class DocsBuilder {
      * Publish
      */
 
-    this.logger.info(`Running publisher on entity ${getEntityId(this.entity)}`);
+    this.logger.info(
+      `Step 3 of 3: Publishing docs for entity ${serializeEntityRef(
+        this.entity,
+      )}`,
+    );
+
     await this.publisher.publish({
       entity: this.entity,
       directory: outputDir,
     });
-    this.logger.debug(
-      `Removing generated directory ${outputDir} since the site has been published`,
-    );
+
     try {
       // Not a blocker hence no need to await this.
       fs.remove(outputDir);
+      this.logger.debug(
+        `Removing generated directory ${outputDir} since the site has been published`,
+      );
     } catch (error) {
       this.logger.debug(`Error removing generated directory ${error.message}`);
     }
 
-    // Store the latest build etag for the entity
-    new BuildMetadataStorage(this.entity.metadata.uid).setEtag(etag);
+    // Update the last check time for the entity
+    new BuildMetadataStorage(this.entity.metadata.uid).setLastUpdated();
   }
 }

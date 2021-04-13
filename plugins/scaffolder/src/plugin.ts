@@ -15,15 +15,15 @@
  */
 
 import {
-  createPlugin,
   createApiFactory,
+  createPlugin,
+  createRoutableExtension,
   discoveryApiRef,
   identityApiRef,
-  configApiRef,
-  createRoutableExtension,
 } from '@backstage/core';
-import { rootRouteRef } from './routes';
+import { scmIntegrationsApiRef } from '@backstage/integration-react';
 import { scaffolderApiRef, ScaffolderClient } from './api';
+import { rootRouteRef, registerComponentRouteRef } from './routes';
 
 export const scaffolderPlugin = createPlugin({
   id: 'scaffolder',
@@ -33,14 +33,17 @@ export const scaffolderPlugin = createPlugin({
       deps: {
         discoveryApi: discoveryApiRef,
         identityApi: identityApiRef,
-        configApi: configApiRef,
+        scmIntegrationsApi: scmIntegrationsApiRef,
       },
-      factory: ({ discoveryApi, identityApi, configApi }) =>
-        new ScaffolderClient({ discoveryApi, identityApi, configApi }),
+      factory: ({ discoveryApi, identityApi, scmIntegrationsApi }) =>
+        new ScaffolderClient({ discoveryApi, identityApi, scmIntegrationsApi }),
     }),
   ],
   routes: {
     root: rootRouteRef,
+  },
+  externalRoutes: {
+    registerComponent: registerComponentRouteRef,
   },
 });
 

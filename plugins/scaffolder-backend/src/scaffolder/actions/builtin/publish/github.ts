@@ -13,16 +13,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-import { InputError } from '@backstage/backend-common';
+import { InputError } from '@backstage/errors';
 import {
   GithubCredentialsProvider,
   ScmIntegrationRegistry,
 } from '@backstage/integration';
 import { Octokit } from '@octokit/rest';
 import { initRepoAndPush } from '../../../stages/publish/helpers';
-import { parseRepoUrl } from './util';
+import { getRepoSourceDirectory, parseRepoUrl } from './util';
 import { createTemplateAction } from '../../createTemplateAction';
+
+type Permission = 'pull' | 'push' | 'admin' | 'maintain' | 'triage';
+type Collaborator = { access: Permission; username: string };
 
 export function createPublishGithubAction(options: {
   integrations: ScmIntegrationRegistry;
@@ -40,9 +42,13 @@ export function createPublishGithubAction(options: {
     repoUrl: string;
     description?: string;
     access?: string;
+    sourcePath?: string;
     repoVisibility: 'private' | 'internal' | 'public';
+    collaborators: Collaborator[];
   }>({
     id: 'publish:github',
+    description:
+      'Initializes a git repository of contents in workspace and publishes it to GitHub.',
     schema: {
       input: {
         type: 'object',
@@ -64,6 +70,31 @@ export function createPublishGithubAction(options: {
             title: 'Repository Visiblity',
             type: 'string',
             enum: ['private', 'public', 'internal'],
+          },
+          sourcePath: {
+            title:
+              'Path within the workspace that will be used as the repository root. If omitted, the entire workspace will be published as the respository.',
+            type: 'string',
+          },
+          collaborators: {
+            title: 'Collaborators',
+            description: 'Provide users with permissions',
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['username', 'access'],
+              properties: {
+                access: {
+                  type: 'string',
+                  description: 'The type of access for the user',
+                  enum: ['push', 'pull', 'admin', 'maintain', 'triage'],
+                },
+                username: {
+                  type: 'string',
+                  description: 'The username or group',
+                },
+              },
+            },
           },
         },
       },
@@ -87,6 +118,7 @@ export function createPublishGithubAction(options: {
         description,
         access,
         repoVisibility = 'private',
+        collaborators,
       } = ctx.input;
 
       const { owner, repo, host } = parseRepoUrl(repoUrl);
@@ -100,8 +132,12 @@ export function createPublishGithubAction(options: {
         );
       }
 
+      // TODO(blam): Consider changing this API to have owner, repo interface instead of URL as the it's
+      // needless to create URL and then parse again the other side.
       const { token } = await credentialsProvider.getCredentials({
-        url: `${host}/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+        url: `https://${host}/${encodeURIComponent(owner)}/${encodeURIComponent(
+          repo,
+        )}`,
       });
 
       if (!token) {
@@ -124,7 +160,7 @@ export function createPublishGithubAction(options: {
           ? client.repos.createInOrg({
               name: repo,
               org: owner,
-              private: repoVisibility !== 'public',
+              private: repoVisibility === 'private',
               visibility: repoVisibility,
               description: description,
             })
@@ -154,11 +190,32 @@ export function createPublishGithubAction(options: {
         });
       }
 
+      if (collaborators) {
+        for (const {
+          access: permission,
+          username: team_slug,
+        } of collaborators) {
+          try {
+            await client.teams.addOrUpdateRepoPermissionsInOrg({
+              org: owner,
+              team_slug,
+              owner,
+              repo,
+              permission,
+            });
+          } catch (e) {
+            ctx.logger.warn(
+              `Skipping ${permission} access for ${team_slug}, ${e.message}`,
+            );
+          }
+        }
+      }
+
       const remoteUrl = data.clone_url;
       const repoContentsUrl = `${data.html_url}/blob/master`;
 
       await initRepoAndPush({
-        dir: ctx.workspacePath,
+        dir: getRepoSourceDirectory(ctx.workspacePath, ctx.input.sourcePath),
         remoteUrl,
         auth: {
           username: 'x-access-token',

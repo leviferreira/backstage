@@ -37,7 +37,10 @@ export const kubernetesPlugin = createPlugin({
   apis: [
     createApiFactory({
       api: kubernetesApiRef,
-      deps: { discoveryApi: discoveryApiRef, identityApi: identityApiRef },
+      deps: {
+        discoveryApi: discoveryApiRef,
+        identityApi: identityApiRef,
+      },
       factory: ({ discoveryApi, identityApi }) =>
         new KubernetesBackendClient({ discoveryApi, identityApi }),
     }),

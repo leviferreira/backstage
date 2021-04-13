@@ -33,21 +33,7 @@ export class KubernetesBackendClient implements KubernetesApi {
     this.identityApi = options.identityApi;
   }
 
-  private async getRequired(
-    path: string,
-    requestBody: KubernetesRequestBody,
-  ): Promise<any> {
-    const url = `${await this.discoveryApi.getBaseUrl('kubernetes')}${path}`;
-    const idToken = await this.identityApi.getIdToken();
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(idToken && { Authorization: `Bearer ${idToken}` }),
-      },
-      body: JSON.stringify(requestBody),
-    });
-
+  private async handleResponse(response: Response): Promise<any> {
     if (!response.ok) {
       const payload = await response.text();
       let message;
@@ -65,12 +51,40 @@ export class KubernetesBackendClient implements KubernetesApi {
     return await response.json();
   }
 
+  private async postRequired(
+    path: string,
+    requestBody: KubernetesRequestBody,
+  ): Promise<any> {
+    const url = `${await this.discoveryApi.getBaseUrl('kubernetes')}${path}`;
+    const idToken = await this.identityApi.getIdToken();
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(idToken && { Authorization: `Bearer ${idToken}` }),
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    return this.handleResponse(response);
+  }
+
   async getObjectsByEntity(
     requestBody: KubernetesRequestBody,
   ): Promise<ObjectsByEntityResponse> {
-    return await this.getRequired(
+    return await this.postRequired(
       `/services/${requestBody.entity.metadata.name}`,
       requestBody,
     );
+  }
+
+  async getClusters(): Promise<{ name: string; authProvider: string }[]> {
+    const url = `${await this.discoveryApi.getBaseUrl('kubernetes')}/clusters`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+    });
+
+    return (await this.handleResponse(response)).items;
   }
 }

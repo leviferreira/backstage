@@ -24,7 +24,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import { TemplateActionRegistry } from '../actions/TemplateActionRegistry';
 import * as handlebars from 'handlebars';
-import { InputError } from '@backstage/backend-common';
+import { InputError } from '@backstage/errors';
 
 type Options = {
   logger: Logger;
@@ -98,9 +98,9 @@ export class TaskWorker {
             throw new Error(`Action '${step.action}' does not exist`);
           }
 
-          const input = JSON.parse(
-            JSON.stringify(step.input),
-            (_key, value) => {
+          const input =
+            step.input &&
+            JSON.parse(JSON.stringify(step.input), (_key, value) => {
               if (typeof value === 'string') {
                 return handlebars.compile(value, {
                   noEscape: true,
@@ -110,8 +110,7 @@ export class TaskWorker {
                 })(templateCtx);
               }
               return value;
-            },
-          );
+            });
 
           if (action.schema?.input) {
             const validateResult = validateJsonSchema(input, action.schema, {

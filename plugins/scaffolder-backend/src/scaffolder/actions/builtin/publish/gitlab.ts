@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-import { InputError } from '@backstage/backend-common';
+import { InputError } from '@backstage/errors';
 import { ScmIntegrationRegistry } from '@backstage/integration';
 import { Gitlab } from '@gitbeaker/node';
 import { initRepoAndPush } from '../../../stages/publish/helpers';
-import { parseRepoUrl } from './util';
+import { getRepoSourceDirectory, parseRepoUrl } from './util';
 import { createTemplateAction } from '../../createTemplateAction';
 
 export function createPublishGitlabAction(options: {
@@ -29,8 +29,11 @@ export function createPublishGitlabAction(options: {
   return createTemplateAction<{
     repoUrl: string;
     repoVisibility: 'private' | 'internal' | 'public';
+    sourcePath?: string;
   }>({
     id: 'publish:gitlab',
+    description:
+      'Initializes a git repository of the content in the workspace, and publishes it to GitLab.',
     schema: {
       input: {
         type: 'object',
@@ -44,6 +47,11 @@ export function createPublishGitlabAction(options: {
             title: 'Repository Visiblity',
             type: 'string',
             enum: ['private', 'public', 'internal'],
+          },
+          sourcePath: {
+            title:
+              'Path within the workspace that will be used as the repository root. If omitted, the entire workspace will be published as the respository.',
+            type: 'string',
           },
         },
       },
@@ -104,7 +112,7 @@ export function createPublishGitlabAction(options: {
       const repoContentsUrl = `${remoteUrl}/-/blob/master`;
 
       await initRepoAndPush({
-        dir: ctx.workspacePath,
+        dir: getRepoSourceDirectory(ctx.workspacePath, ctx.input.sourcePath),
         remoteUrl: http_url_to_repo as string,
         auth: {
           username: 'oauth2',

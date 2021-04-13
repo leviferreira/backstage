@@ -18,6 +18,11 @@ export * from './azure';
 export * from './bitbucket';
 export * from './github';
 export * from './gitlab';
+export * from './googleGcs';
 export { defaultScmResolveUrl } from './helpers';
 export { ScmIntegrations } from './ScmIntegrations';
-export type { ScmIntegration, ScmIntegrationRegistry } from './types';
+export type {
+  ScmIntegration,
+  ScmIntegrationRegistry,
+  ScmIntegrationsGroup,
+} from './types';
